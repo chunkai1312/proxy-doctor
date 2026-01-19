@@ -77,30 +77,36 @@ async function runDiagnostics(options: CliOptions, logger: Logger): Promise<void
     process.exit(1);
   }
 
-  // Determine what to test
-  const testHttp = options.http || (!options.http && !options.https);
-  const testHttps = options.https || (!options.http && !options.https);
-  const timeout = options.timeout ? parseInt(String(options.timeout), 10) : DEFAULT_TIMEOUT;
-
-  logger.debug(`Test configuration: HTTP=${testHttp}, HTTPS=${testHttps}, timeout=${timeout}ms`);
-
-
-  // Determine target URLs
+  // Determine target URLs and protocols
   let httpTarget: string = DEFAULT_TARGETS.http;
   let httpsTarget: string = DEFAULT_TARGETS.https;
+  let testHttp: boolean;
+  let testHttps: boolean;
 
   if (options.target) {
     const targetUrl = new URL(options.target);
+
+    // When --target is specified, only test that protocol unless --http/--https override
     if (targetUrl.protocol === 'https:') {
       httpsTarget = options.target;
+      testHttp = options.http ?? false;
+      testHttps = options.https ?? true;
       logger.debug(`Using custom HTTPS target: ${httpsTarget}`);
     } else {
       httpTarget = options.target;
+      testHttp = options.http ?? true;
+      testHttps = options.https ?? false;
       logger.debug(`Using custom HTTP target: ${httpTarget}`);
     }
   } else {
+    // No --target specified, use defaults
+    testHttp = options.http || (!options.http && !options.https);
+    testHttps = options.https || (!options.http && !options.https);
     logger.debug(`Using default targets: HTTP=${httpTarget}, HTTPS=${httpsTarget}`);
   }
+
+  const timeout = options.timeout ? parseInt(String(options.timeout), 10) : DEFAULT_TIMEOUT;
+  logger.debug(`Test configuration: HTTP=${testHttp}, HTTPS=${testHttps}, timeout=${timeout}ms`);
 
   // Run tests
   const spinner = logger.spinner(
