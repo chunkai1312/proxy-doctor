@@ -1,8 +1,36 @@
 {
   "name": "proxy-doctor",
   "version": "0.0.0",
+  "description": "CLI tool to diagnose HTTP/HTTPS proxy connectivity",
   "license": "MIT",
   "type": "module",
+  "keywords": [
+    "proxy",
+    "http-proxy",
+    "https-proxy",
+    "diagnostics",
+    "connectivity",
+    "network",
+    "cli",
+    "debugging"
+  ],
+  "author": "Chun-Kai Wang <chunkai1312@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chunkai1312/proxy-doctor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chunkai1312/proxy-doctor/issues"
+  },
+  "homepage": "https://github.com/chunkai1312/proxy-doctor#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "proxy-doctor": "./dist/index.js"
   },
