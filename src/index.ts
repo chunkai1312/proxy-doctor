@@ -19,6 +19,7 @@ program
   .option('-j, --json', 'Output results as JSON')
   .option('--http', 'Test HTTP proxy only')
   .option('--https', 'Test HTTPS proxy only')
+  .option('-d, --direct', 'Test direct connection without proxy (for debugging)')
   .action(async (options: CliOptions) => {
     const logger = new Logger({
       verbose: options.verbose,
@@ -49,16 +50,19 @@ async function runDiagnostics(options: CliOptions, logger: Logger): Promise<void
     logger.debug(`Using provided proxy: ${options.proxy}`);
   } else {
     // Detect from environment variables
+    logger.debug('Detecting proxy from environment variables...');
     config = detectProxyFromEnv();
+    logger.debug(`Detected config: HTTP=${config.http}, HTTPS=${config.https}, ALL=${config.all}`);
   }
 
   logger.printConfig(config);
 
-  // Check if any proxy is configured
-  if (!hasProxyConfigured(config)) {
+  // Check if any proxy is configured (skip check in direct mode)
+  if (!options.direct && !hasProxyConfigured(config)) {
     logger.warn('No proxy configuration found.');
     logger.warn('Set HTTP_PROXY, HTTPS_PROXY, or ALL_PROXY environment variables,');
     logger.warn('or use --proxy <url> to specify a proxy to test.');
+    logger.warn('Or use --direct to test direct connection without proxy.');
 
     if (options.json) {
       const summary: TestSummary = {
@@ -77,6 +81,9 @@ async function runDiagnostics(options: CliOptions, logger: Logger): Promise<void
   const testHttps = options.https || (!options.http && !options.https);
   const timeout = options.timeout ? parseInt(String(options.timeout), 10) : DEFAULT_TIMEOUT;
 
+  logger.debug(`Test configuration: HTTP=${testHttp}, HTTPS=${testHttps}, timeout=${timeout}ms`);
+
+
   // Determine target URLs
   let httpTarget: string = DEFAULT_TARGETS.http;
   let httpsTarget: string = DEFAULT_TARGETS.https;
@@ -85,13 +92,19 @@ async function runDiagnostics(options: CliOptions, logger: Logger): Promise<void
     const targetUrl = new URL(options.target);
     if (targetUrl.protocol === 'https:') {
       httpsTarget = options.target;
+      logger.debug(`Using custom HTTPS target: ${httpsTarget}`);
     } else {
       httpTarget = options.target;
+      logger.debug(`Using custom HTTP target: ${httpTarget}`);
     }
+  } else {
+    logger.debug(`Using default targets: HTTP=${httpTarget}, HTTPS=${httpsTarget}`);
   }
 
   // Run tests
-  const spinner = logger.spinner('Testing proxy connectivity...');
+  const spinner = logger.spinner(
+    options.direct ? 'Testing direct connectivity...' : 'Testing proxy connectivity...'
+  );
   spinner.start();
 
   const results = await runAllTests(config, {
@@ -100,6 +113,8 @@ async function runDiagnostics(options: CliOptions, logger: Logger): Promise<void
     timeout,
     testHttp,
     testHttps,
+    verbose: options.verbose,
+    direct: options.direct,
   });
 
   spinner.stop();
