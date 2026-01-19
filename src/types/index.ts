@@ -54,6 +54,7 @@ export interface CliOptions {
   json?: boolean;
   http?: boolean;
   https?: boolean;
+  direct?: boolean;
 }
 
 /**
