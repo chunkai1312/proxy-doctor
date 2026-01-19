@@ -107,6 +107,35 @@ describe('tester', () => {
       expect(diagnostic?.suggestion).toContain('credentials');
     });
 
+    it('should diagnose SSL certificate errors', () => {
+      const result: TestResult = {
+        success: false,
+        proxyType: 'https',
+        proxyUrl: 'http://proxy:8080',
+        targetUrl: 'https://example.com',
+        responseTime: 100,
+        error: 'unable to get local issuer certificate',
+        errorCode: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+      };
+      const diagnostic = diagnoseError(result);
+      expect(diagnostic?.issue).toBe('SSL certificate verification failed');
+      expect(diagnostic?.suggestion).toContain('self-signed certificate');
+    });
+
+    it('should diagnose cancelled requests', () => {
+      const result: TestResult = {
+        success: false,
+        proxyType: 'http',
+        proxyUrl: 'http://proxy:8080',
+        targetUrl: 'http://example.com',
+        responseTime: 50,
+        error: 'Request was cancelled',
+      };
+      const diagnostic = diagnoseError(result);
+      expect(diagnostic?.issue).toBe('Request was cancelled');
+      expect(diagnostic?.suggestion).toContain('proxy may not support');
+    });
+
     it('should provide generic diagnosis for unknown errors', () => {
       const result: TestResult = {
         success: false,

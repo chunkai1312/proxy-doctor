@@ -55,6 +55,7 @@ export interface CliOptions {
   http?: boolean;
   https?: boolean;
   direct?: boolean;
+  insecure?: boolean;
 }
 
 /**

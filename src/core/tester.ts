@@ -1,4 +1,4 @@
-import { ProxyAgent, fetch } from 'undici';
+import { ProxyAgent, Agent, fetch } from 'undici';
 import type { ProxyConfig, TestResult, DiagnosticInfo } from '../types/index.js';
 
 /**
@@ -21,7 +21,8 @@ export async function testDirect(
   targetUrl: string,
   proxyType: 'http' | 'https' | 'all',
   timeout: number = DEFAULT_TIMEOUT,
-  verbose: boolean = false
+  verbose: boolean = false,
+  insecure: boolean = false
 ): Promise<TestResult> {
   const startTime = Date.now();
 
@@ -33,9 +34,20 @@ export async function testDirect(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+    if (verbose && insecure) {
+      console.log(`   [debug] SSL verification disabled (--insecure)`);
+    }
+
     const response = await fetch(targetUrl, {
       signal: controller.signal,
-      method: 'HEAD',
+      method: 'GET',
+      ...(insecure && targetUrl.startsWith('https') ? {
+        dispatcher: new Agent({
+          connect: {
+            rejectUnauthorized: false,
+          },
+        }),
+      } : {}),
     });
 
     clearTimeout(timeoutId);
@@ -84,7 +96,8 @@ export async function testProxy(
   targetUrl: string,
   proxyType: 'http' | 'https' | 'all',
   timeout: number = DEFAULT_TIMEOUT,
-  verbose: boolean = false
+  verbose: boolean = false,
+  insecure: boolean = false
 ): Promise<TestResult> {
   const startTime = Date.now();
 
@@ -93,7 +106,21 @@ export async function testProxy(
   }
 
   try {
-    const proxyAgent = new ProxyAgent(proxyUrl);
+    if (verbose && insecure) {
+      console.log(`   [debug] SSL verification disabled (--insecure)`);
+    }
+
+    const proxyAgent = new ProxyAgent({
+      uri: proxyUrl,
+      ...(insecure ? {
+        connect: {
+          rejectUnauthorized: false,
+        },
+        requestTls: {
+          rejectUnauthorized: false,
+        },
+      } : {}),
+    });
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -101,7 +128,7 @@ export async function testProxy(
     const response = await fetch(targetUrl, {
       dispatcher: proxyAgent,
       signal: controller.signal,
-      method: 'HEAD', // Use HEAD to minimize data transfer
+      method: 'GET',
     });
 
     clearTimeout(timeoutId);
@@ -179,6 +206,7 @@ export async function runAllTests(
     testHttps?: boolean;
     verbose?: boolean;
     direct?: boolean;
+    insecure?: boolean;
   } = {}
 ): Promise<TestResult[]> {
   const {
@@ -189,6 +217,7 @@ export async function runAllTests(
     testHttps = true,
     verbose = false,
     direct = false,
+    insecure = false,
   } = options;
 
   const results: TestResult[] = [];
@@ -196,11 +225,11 @@ export async function runAllTests(
   // If direct mode, test without proxy
   if (direct) {
     if (testHttp) {
-      const result = await testDirect(httpTarget, 'http', timeout, verbose);
+      const result = await testDirect(httpTarget, 'http', timeout, verbose, insecure);
       results.push(result);
     }
     if (testHttps) {
-      const result = await testDirect(httpsTarget, 'https', timeout, verbose);
+      const result = await testDirect(httpsTarget, 'https', timeout, verbose, insecure);
       results.push(result);
     }
     return results;
@@ -209,14 +238,14 @@ export async function runAllTests(
   // Test HTTP proxy
   if (testHttp && (config.http || config.all)) {
     const proxyUrl = config.http ?? config.all!;
-    const result = await testProxy(proxyUrl, httpTarget, 'http', timeout, verbose);
+    const result = await testProxy(proxyUrl, httpTarget, 'http', timeout, verbose, insecure);
     results.push(result);
   }
 
   // Test HTTPS proxy
   if (testHttps && (config.https || config.all)) {
     const proxyUrl = config.https ?? config.all!;
-    const result = await testProxy(proxyUrl, httpsTarget, 'https', timeout, verbose);
+    const result = await testProxy(proxyUrl, httpsTarget, 'https', timeout, verbose, insecure);
     results.push(result);
   }
 
@@ -274,6 +303,27 @@ export function diagnoseError(result: TestResult): DiagnosticInfo | null {
     return {
       issue: 'Proxy authentication required',
       suggestion: 'The proxy requires authentication. Add credentials to the proxy URL (http://user:pass@proxy:port).',
+      details: error,
+    };
+  }
+
+  // SSL certificate errors
+  if (errorCode === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' ||
+      errorCode === 'SELF_SIGNED_CERT_IN_CHAIN' ||
+      errorCode === 'CERT_HAS_EXPIRED' ||
+      error?.includes('certificate')) {
+    return {
+      issue: 'SSL certificate verification failed',
+      suggestion: 'The proxy may be using a self-signed certificate or performing SSL inspection. This is common in corporate environments.',
+      details: error,
+    };
+  }
+
+  // Request cancelled (common with HEAD requests on some proxies)
+  if (error?.includes('cancelled') || error?.includes('aborted')) {
+    return {
+      issue: 'Request was cancelled',
+      suggestion: 'The proxy may not support the request method or cancelled the connection. This can happen with certain proxy configurations.',
       details: error,
     };
   }

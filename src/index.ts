@@ -20,6 +20,7 @@ program
   .option('--http', 'Test HTTP proxy only')
   .option('--https', 'Test HTTPS proxy only')
   .option('-d, --direct', 'Test direct connection without proxy (for debugging)')
+  .option('-k, --insecure', 'Skip SSL certificate verification (useful for corporate proxies with self-signed certificates)')
   .action(async (options: CliOptions) => {
     const logger = new Logger({
       verbose: options.verbose,
@@ -115,6 +116,7 @@ async function runDiagnostics(options: CliOptions, logger: Logger): Promise<void
     testHttps,
     verbose: options.verbose,
     direct: options.direct,
+    insecure: options.insecure,
   });
 
   spinner.stop();
