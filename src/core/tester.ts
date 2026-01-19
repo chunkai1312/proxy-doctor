@@ -15,15 +15,82 @@ export const DEFAULT_TARGETS = {
 export const DEFAULT_TIMEOUT = 10000;
 
 /**
+ * Test direct connectivity without proxy
+ */
+export async function testDirect(
+  targetUrl: string,
+  proxyType: 'http' | 'https' | 'all',
+  timeout: number = DEFAULT_TIMEOUT,
+  verbose: boolean = false
+): Promise<TestResult> {
+  const startTime = Date.now();
+
+  if (verbose) {
+    console.log(`   [debug] Starting direct ${proxyType.toUpperCase()} test: ${targetUrl}`);
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(targetUrl, {
+      signal: controller.signal,
+      method: 'HEAD',
+    });
+
+    clearTimeout(timeoutId);
+    const responseTime = Date.now() - startTime;
+
+    if (verbose) {
+      console.log(`   [debug] Direct ${proxyType.toUpperCase()} test succeeded: ${response.status} in ${responseTime}ms`);
+    }
+
+    return {
+      success: response.ok,
+      proxyType,
+      proxyUrl: '(direct)',
+      targetUrl,
+      responseTime,
+      statusCode: response.status,
+    };
+  } catch (error) {
+    const responseTime = Date.now() - startTime;
+    const errorInfo = parseError(error);
+
+    if (verbose) {
+      console.log(`   [debug] Direct ${proxyType.toUpperCase()} test failed: ${errorInfo.message} (${errorInfo.code || 'no code'})`);
+      if (error instanceof Error && error.stack) {
+        console.log(`   [debug] Stack trace: ${error.stack.split('\n').slice(0, 3).join('\n')}`);
+      }
+    }
+
+    return {
+      success: false,
+      proxyType,
+      proxyUrl: '(direct)',
+      targetUrl,
+      responseTime,
+      error: errorInfo.message,
+      errorCode: errorInfo.code,
+    };
+  }
+}
+
+/**
  * Test proxy connectivity to a target URL
  */
 export async function testProxy(
   proxyUrl: string,
   targetUrl: string,
   proxyType: 'http' | 'https' | 'all',
-  timeout: number = DEFAULT_TIMEOUT
+  timeout: number = DEFAULT_TIMEOUT,
+  verbose: boolean = false
 ): Promise<TestResult> {
   const startTime = Date.now();
+
+  if (verbose) {
+    console.log(`   [debug] Starting ${proxyType.toUpperCase()} test: ${targetUrl} via ${proxyUrl}`);
+  }
 
   try {
     const proxyAgent = new ProxyAgent(proxyUrl);
@@ -40,6 +107,10 @@ export async function testProxy(
     clearTimeout(timeoutId);
     const responseTime = Date.now() - startTime;
 
+    if (verbose) {
+      console.log(`   [debug] ${proxyType.toUpperCase()} test succeeded: ${response.status} in ${responseTime}ms`);
+    }
+
     return {
       success: response.ok,
       proxyType,
@@ -51,6 +122,13 @@ export async function testProxy(
   } catch (error) {
     const responseTime = Date.now() - startTime;
     const errorInfo = parseError(error);
+
+    if (verbose) {
+      console.log(`   [debug] ${proxyType.toUpperCase()} test failed: ${errorInfo.message} (${errorInfo.code || 'no code'})`);
+      if (error instanceof Error && error.stack) {
+        console.log(`   [debug] Stack trace: ${error.stack.split('\n').slice(0, 3).join('\n')}`);
+      }
+    }
 
     return {
       success: false,
@@ -69,6 +147,16 @@ export async function testProxy(
  */
 function parseError(error: unknown): { message: string; code?: string } {
   if (error instanceof Error) {
+    // Check if error has a cause (common in undici fetch errors)
+    const cause = (error as any).cause;
+    if (cause instanceof Error) {
+      const code = (cause as NodeJS.ErrnoException).code;
+      return {
+        message: cause.message,
+        code,
+      };
+    }
+
     const code = (error as NodeJS.ErrnoException).code;
     return {
       message: error.message,
@@ -89,6 +177,8 @@ export async function runAllTests(
     timeout?: number;
     testHttp?: boolean;
     testHttps?: boolean;
+    verbose?: boolean;
+    direct?: boolean;
   } = {}
 ): Promise<TestResult[]> {
   const {
@@ -97,21 +187,36 @@ export async function runAllTests(
     timeout = DEFAULT_TIMEOUT,
     testHttp = true,
     testHttps = true,
+    verbose = false,
+    direct = false,
   } = options;
 
   const results: TestResult[] = [];
 
+  // If direct mode, test without proxy
+  if (direct) {
+    if (testHttp) {
+      const result = await testDirect(httpTarget, 'http', timeout, verbose);
+      results.push(result);
+    }
+    if (testHttps) {
+      const result = await testDirect(httpsTarget, 'https', timeout, verbose);
+      results.push(result);
+    }
+    return results;
+  }
+
   // Test HTTP proxy
   if (testHttp && (config.http || config.all)) {
     const proxyUrl = config.http ?? config.all!;
-    const result = await testProxy(proxyUrl, httpTarget, 'http', timeout);
+    const result = await testProxy(proxyUrl, httpTarget, 'http', timeout, verbose);
     results.push(result);
   }
 
   // Test HTTPS proxy
   if (testHttps && (config.https || config.all)) {
     const proxyUrl = config.https ?? config.all!;
-    const result = await testProxy(proxyUrl, httpsTarget, 'https', timeout);
+    const result = await testProxy(proxyUrl, httpsTarget, 'https', timeout, verbose);
     results.push(result);
   }
 
