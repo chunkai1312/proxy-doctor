@@ -1,6 +1,6 @@
 {
   "name": "proxy-doctor",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "CLI tool to diagnose HTTP/HTTPS proxy connectivity",
   "license": "MIT",
   "type": "module",
